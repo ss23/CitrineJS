@@ -18,11 +18,7 @@ var srv = http.createServer(function (req, res) {
 		peerkey = generatePeerKey(torrentHash, params.query.peer_id, params.query.key);
 
 		console.log(params);
-		if (params.query.left == 0) {
-			addCompletePeer(torrentHash, peerkey, params.query.peer_id, peer_ip, params.query.port);
-		} else {
-			addIncompletePeer(torrentHash, peerkey, params.query.peer_id, peer_ip, params.query.port); 
-		}
+		addPeer(torrentHash, (params.query.left == 0), peerkey, params.query.peer_id, peer_ip, params.query.port);
 		console.log('Announce logged');
 		res.end(bencode.bencode({
 			'interval': '10',
@@ -50,23 +46,28 @@ srv.listen(1337, "192.168.0.23", function() {
 });
 
 
-function addCompletePeer(torrentHash, peerkey, peerid, ip, port) {
-
-}
-
-function addIncompletePeer(torrentHash, peerkey, peerid, ip, port) {
+function addPeer(torrentHash, complete, peerkey, peerid, ip, port) {
 	// Wrap this in a transaction I guess
-	client.sadd('torrent:' + torrentHash, peerkey, function(err, res) {
-		console.log(res);
-		if (err) throw err;
-	});
-	
-	client.hset('tpeer:' + peerkey);	
-	console.log('added a key: ' + torrentHash);
+	if (complete) {
+		complete = 'i';
+	} else {
+		complete = 'u';
+	}
+
+	client.sadd('torrent:' + torrentHash, complete + ':' + peerkey);
+	client.hmset('tpeer:' + peerkey, {
+		'peerid': peerid,
+		'ip': ip,
+		'port': port});
+	client.expire('tpeer:' + peerkey, 100);
+	// We could expire this, idk
+
+	console.log('added a key -  tpeer:' + peerkey);
 }
 
 function getPeers(torrentHash, count) {
 	count = count || 50; // A default of 50
+	// Get a list of all Peers for a torrent
 	
 }
 
