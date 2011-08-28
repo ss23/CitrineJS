@@ -7,34 +7,33 @@ var srv = http.createServer(function (req, res) {
 	params = require('url').parse(req.url, true);
 
 	if (params.pathname == '/announce') {
-		var ip_address = null;
-		try {
-			peer_ip = req.headers['x-forwarded-for'];
-		} catch (error) {
-			peer_ip = req.connection.remoteAddress;
-		}
+		peer_ip = req.connection.remoteAddress;
 
 		torrentHash = new Buffer(params.query.info_hash, 'binary').toString('base64');
 		peerkey = generatePeerKey(torrentHash, params.query.peer_id, params.query.key);
 
-		console.log(params);
+		// First thing we do is finish the request!
+		getPeers(function(peers) {
+			console.log(peers);
+			// At this point, we need to use each of those peers to do stuff I guess
+			
+			res.end(bencode.bencode({
+				'interval': '10',
+				'tracker id': 'foo',
+				'complete': 1,
+				'incomplete': 1,
+				'peers': {
+					'peer id': 123,
+					'ip': '1.1.1.1',
+					'port': 123
+				}
+			}).toString();
+		}, torrentHash);
+
+		// Now the request is completed, we can do things that are non essential
 		addPeer(torrentHash, (params.query.left == 0), peerkey, params.query.peer_id, peer_ip, params.query.port);
-		console.log('Announce logged');
-		res.end(bencode.bencode({
-			'interval': '10',
-			'tracker id': 'foo',
-			'complete': 1,
-			'incomplete': 1,
-			'peers': {
-				'peer id': 123,
-				'ip': '1.1.1.1',
-				'port': 123
-			}
-		
-		}).toString());
 	}
 
-	//console.log(require('url').parse(req.url, true));
 	res.end(bencode.bencode({'failure reason': 'Unhandled request'}).toString());
 });
 
@@ -62,13 +61,18 @@ function addPeer(torrentHash, complete, peerkey, peerid, ip, port) {
 	client.expire('tpeer:' + peerkey, 100);
 	// We could expire this, idk
 
-	console.log('added a key -  tpeer:' + peerkey);
+	//console.log('added a key -  tpeer:' + peerkey);
 }
 
-function getPeers(torrentHash, count) {
+function getPeers(callback, torrentHash, count) {
 	count = count || 50; // A default of 50
 	// Get a list of all Peers for a torrent
 	
+	// For now, uh, get an array of... peers for a torrent
+	console.log('torrent:' + torrentHash);
+	client.smembers('torrent:' + torrentHash, function(err, peers) {
+		callback(peers);
+	});
 }
 
 function removePeer(torrentHash, peerkey) {
@@ -76,7 +80,7 @@ function removePeer(torrentHash, peerkey) {
 }
 
 function generatePeerKey(torrentHash, peerid, key) {
-	console.log('generating key' + key + peerid);
+	//console.log('generating key' + key + peerid);
 	var hash = require('crypto').createHash('md5'); // We need to use something *far* faster here
 	hash.update(peerid);
 	hash.update(key);
