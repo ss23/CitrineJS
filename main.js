@@ -1,6 +1,6 @@
 var http = require('http');
 var bencode = require('dht-bencode');
-var redis = require("redis-node");
+var redis = require("redis");
 
 var srv = http.createServer(function (req, res) {
 	// What is it?
@@ -16,7 +16,17 @@ var srv = http.createServer(function (req, res) {
 		getPeers(function(peers) {
 			console.log(peers);
 			// At this point, we need to use each of those peers to do stuff I guess
-			
+			// I'm told theres some crazy multi thing... BAM
+			multi = client.multi();
+			peers.forEach(function(element) {
+				
+				console.log('get all for ' + element.substr(2));
+				multi.hgetall('tpeer:' + element.substr(2));
+			});
+			multi.exec(function(err, replies) {
+				console.log(replies);
+			});
+
 			res.end(bencode.bencode({
 				'interval': '10',
 				'tracker id': 'foo',
@@ -27,14 +37,14 @@ var srv = http.createServer(function (req, res) {
 					'ip': '1.1.1.1',
 					'port': 123
 				}
-			}).toString();
+			}).toString());
 		}, torrentHash);
 
 		// Now the request is completed, we can do things that are non essential
 		addPeer(torrentHash, (params.query.left == 0), peerkey, params.query.peer_id, peer_ip, params.query.port);
+	} else {
+		res.end(bencode.bencode({'failure reason': 'Unhandled request'}).toString());
 	}
-
-	res.end(bencode.bencode({'failure reason': 'Unhandled request'}).toString());
 });
 
 // Connect to redis
