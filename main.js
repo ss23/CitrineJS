@@ -1,49 +1,73 @@
 var http = require('http');
 var bencode = require('dht-bencode');
 var redis = require("redis");
-
 var srv = http.createServer(function (req, res) {
 	// What is it?
 	params = require('url').parse(req.url, true);
 
-	if (params.pathname == '/announce') {
+	console.log(params.pathname);	
+	switch(params.pathname) {
+		case "/announce": 
 		peer_ip = req.connection.remoteAddress;
 
 		torrentHash = new Buffer(params.query.info_hash, 'binary').toString('base64');
 		peerkey = generatePeerKey(torrentHash, params.query.peer_id, params.query.key);
 
+		case "/scrape":
 		// First thing we do is finish the request!
 		getPeers(function(peers) {
+
 			console.log(peers);
 			// At this point, we need to use each of those peers to do stuff I guess
 			// I'm told theres some crazy multi thing... BAM
 			multi = client.multi();
 			peers.forEach(function(element) {
-				
 				console.log('get all for ' + element.substr(2));
 				multi.hgetall('tpeer:' + element.substr(2));
 			});
-			multi.exec(function(err, replies) {
-				console.log(replies);
-			});
 
-			res.end(bencode.bencode({
-				'interval': '10',
-				'tracker id': 'foo',
-				'complete': 1,
-				'incomplete': 1,
-				'peers': {
-					'peer id': 123,
-					'ip': '1.1.1.1',
-					'port': 123
+			multi.exec(function(err, replies) {
+				//Count the number of complete and incomplete peers
+				var complete = 0;
+				var incomplete = 0;
+
+				//For each peer in the peers array
+				for(var i = 0; i < peers.length; i++)
+				{
+					//i is incomplete
+					if(peers[i].substr(0,1) == 'i')
+					{
+						incomplete++;
+					}
+					//c is complete
+					else
+					{
+						complete++;
+					}
 				}
-			}).toString());
+
+				var data = {
+					'interval': '10',
+					'tracker id': 'foo',
+					'complete': complete,
+					'incomplete': incomplete,
+					'peers': replies
+				};
+
+				
+					var resp = bencode.bencode(data).toString();
+					console.log('Data array: ' + JSON.stringify(data));
+					console.log('Bencoded response: ' + resp);
+					res.end(resp);
+			});
 		}, torrentHash);
 
 		// Now the request is completed, we can do things that are non essential
 		addPeer(torrentHash, (params.query.left == 0), peerkey, params.query.peer_id, peer_ip, params.query.port);
-	} else {
+		break;
+	default: 
 		res.end(bencode.bencode({'failure reason': 'Unhandled request'}).toString());
+		break;
 	}
 });
 
@@ -51,16 +75,14 @@ var srv = http.createServer(function (req, res) {
 var client = redis.createClient();
 //client.select(1);
 
-srv.listen(1337, "192.168.0.23", function() {
-});
-
+srv.listen(1337, "127.0.0.1");
 
 function addPeer(torrentHash, complete, peerkey, peerid, ip, port) {
 	// Wrap this in a transaction I guess
 	if (complete) {
-		complete = 'i';
+		complete = 'c';
 	} else {
-		complete = 'u';
+		complete = 'i';
 	}
 
 	client.sadd('torrent:' + torrentHash, complete + ':' + peerkey);
@@ -98,5 +120,16 @@ function generatePeerKey(torrentHash, peerid, key) {
 	return hash.digest('base64');
 }
 
+			/* 
+			{
+				'interval': '10',
+				'tracker id': 'foo',
+				'complete': 1,
+				'incomplete': 1,
+				'peers': {
+					'peer id': 123,
+					'ip': '1.1.1.1',
+					'port': 123
+				}*/
 
 // Will need a worker to expire junk at some point
